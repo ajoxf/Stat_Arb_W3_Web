@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Crypto Arbitrage SaaS</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen flex items-center justify-center">
+    <div x-data="loginForm()" class="w-full max-w-md p-8">
+        <!-- Logo -->
+        <div class="text-center mb-8">
+            <h1 class="text-3xl font-bold text-blue-500">Crypto Arb</h1>
+            <p class="text-gray-400 mt-2">Statistical Arbitrage Trading Platform</p>
+        </div>
+
+        <!-- Tabs -->
+        <div class="flex mb-6 bg-gray-800 rounded-lg p-1">
+            <button @click="mode = 'login'"
+                    class="flex-1 py-2 rounded-md text-sm font-medium transition"
+                    :class="mode === 'login' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'">
+                Login
+            </button>
+            <button @click="mode = 'register'"
+                    class="flex-1 py-2 rounded-md text-sm font-medium transition"
+                    :class="mode === 'register' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'">
+                Register
+            </button>
+        </div>
+
+        <!-- Error Message -->
+        <div x-show="error" x-cloak
+             class="mb-4 p-3 bg-red-500/20 border border-red-500/50 rounded-lg text-red-400 text-sm">
+            <span x-text="error"></span>
+        </div>
+
+        <!-- Login Form -->
+        <form x-show="mode === 'login'" @submit.prevent="login()" class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-400 mb-1">Email</label>
+                <input type="email" x-model="email" required
+                       class="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-400 mb-1">Password</label>
+                <input type="password" x-model="password" required
+                       class="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+            </div>
+            <div class="flex items-center justify-between">
+                <label class="flex items-center">
+                    <input type="checkbox" x-model="remember" class="rounded bg-gray-800 border-gray-700 text-blue-600">
+                    <span class="ml-2 text-sm text-gray-400">Remember me</span>
+                </label>
+                <a href="#" class="text-sm text-blue-400 hover:text-blue-300">Forgot password?</a>
+            </div>
+            <button type="submit" :disabled="loading"
+                    class="w-full py-2 bg-blue-600 hover:bg-blue-700 rounded-lg font-medium disabled:opacity-50">
+                <span x-show="!loading">Sign In</span>
+                <span x-show="loading">Signing in...</span>
+            </button>
+        </form>
+
+        <!-- Register Form -->
+        <form x-show="mode === 'register'" @submit.prevent="register()" class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-400 mb-1">Name (optional)</label>
+                <input type="text" x-model="name"
+                       class="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-400 mb-1">Email</label>
+                <input type="email" x-model="email" required
+                       class="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-400 mb-1">Password</label>
+                <input type="password" x-model="password" required minlength="8"
+                       class="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                <p class="mt-1 text-xs text-gray-500">Min 8 chars, uppercase, lowercase, number, special char</p>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-400 mb-1">Confirm Password</label>
+                <input type="password" x-model="confirmPassword" required
+                       class="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+            </div>
+            <button type="submit" :disabled="loading"
+                    class="w-full py-2 bg-blue-600 hover:bg-blue-700 rounded-lg font-medium disabled:opacity-50">
+                <span x-show="!loading">Create Account</span>
+                <span x-show="loading">Creating...</span>
+            </button>
+        </form>
+
+        <!-- Footer -->
+        <p class="mt-8 text-center text-sm text-gray-500">
+            By continuing, you agree to our Terms of Service and Privacy Policy.
+        </p>
+    </div>
+
+    <script>
+        function loginForm() {
+            return {
+                mode: 'login',
+                email: '',
+                password: '',
+                confirmPassword: '',
+                name: '',
+                remember: false,
+                loading: false,
+                error: null,
+
+                async login() {
+                    this.error = null;
+                    this.loading = true;
+
+                    try {
+                        const res = await fetch('/api/auth/login', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                email: this.email,
+                                password: this.password,
+                                remember: this.remember
+                            })
+                        });
+
+                        const data = await res.json();
+
+                        if (!res.ok) {
+                            this.error = data.error || 'Login failed';
+                        } else {
+                            // Store token and redirect
+                            if (data.access_token) {
+                                localStorage.setItem('access_token', data.access_token);
+                                localStorage.setItem('refresh_token', data.refresh_token);
+                            }
+                            window.location.href = '/dashboard';
+                        }
+                    } catch (e) {
+                        this.error = 'Network error. Please try again.';
+                    } finally {
+                        this.loading = false;
+                    }
+                },
+
+                async register() {
+                    this.error = null;
+
+                    if (this.password !== this.confirmPassword) {
+                        this.error = 'Passwords do not match';
+                        return;
+                    }
+
+                    this.loading = true;
+
+                    try {
+                        const res = await fetch('/api/auth/register', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                email: this.email,
+                                password: this.password,
+                                name: this.name || null
+                            })
+                        });
+
+                        const data = await res.json();
+
+                        if (!res.ok) {
+                            this.error = data.error || 'Registration failed';
+                        } else {
+                            // Store token and redirect
+                            if (data.access_token) {
+                                localStorage.setItem('access_token', data.access_token);
+                                localStorage.setItem('refresh_token', data.refresh_token);
+                            }
+                            window.location.href = '/dashboard';
+                        }
+                    } catch (e) {
+                        this.error = 'Network error. Please try again.';
+                    } finally {
+                        this.loading = false;
+                    }
+                }
+            };
+        }
+    </script>
+</body>
+</html>

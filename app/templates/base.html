@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Crypto Arbitrage SaaS{% endblock %}</title>
+
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Custom Tailwind Config -->
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#3b82f6',
+                        secondary: '#10b981',
+                        danger: '#ef4444',
+                        warning: '#f59e0b',
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Socket.IO -->
+    <script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
+
+    <!-- Alpine.js for reactivity -->
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        [x-cloak] { display: none !important; }
+
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #1f2937;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #4b5563;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #6b7280;
+        }
+
+        /* Animations */
+        .pulse-green {
+            animation: pulse-green 2s infinite;
+        }
+        @keyframes pulse-green {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+    </style>
+
+    {% block head %}{% endblock %}
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen">
+    <div id="app" x-data="app()" x-cloak>
+        <!-- Navigation -->
+        <nav class="bg-gray-800 border-b border-gray-700">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="flex items-center justify-between h-16">
+                    <div class="flex items-center">
+                        <a href="/dashboard" class="flex items-center">
+                            <span class="text-xl font-bold text-primary">Crypto Arb</span>
+                            <span class="ml-2 px-2 py-1 text-xs bg-primary/20 text-primary rounded">SaaS</span>
+                        </a>
+                        <div class="hidden md:block ml-10">
+                            <div class="flex items-baseline space-x-4">
+                                <a href="/dashboard" class="px-3 py-2 rounded-md text-sm font-medium hover:bg-gray-700"
+                                   :class="{ 'bg-gray-700': currentPage === 'dashboard' }">Dashboard</a>
+                                <a href="/settings" class="px-3 py-2 rounded-md text-sm font-medium hover:bg-gray-700"
+                                   :class="{ 'bg-gray-700': currentPage === 'settings' }">Settings</a>
+                                <a href="/exchanges" class="px-3 py-2 rounded-md text-sm font-medium hover:bg-gray-700"
+                                   :class="{ 'bg-gray-700': currentPage === 'exchanges' }">Exchanges</a>
+                                <a href="/trades" class="px-3 py-2 rounded-md text-sm font-medium hover:bg-gray-700"
+                                   :class="{ 'bg-gray-700': currentPage === 'trades' }">Trades</a>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex items-center space-x-4">
+                        <!-- Status Indicator -->
+                        <div class="flex items-center space-x-2">
+                            <span class="relative flex h-3 w-3">
+                                <span class="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
+                                      :class="status.is_running ? 'bg-green-400' : 'bg-gray-400'"></span>
+                                <span class="relative inline-flex rounded-full h-3 w-3"
+                                      :class="status.is_running ? 'bg-green-500' : 'bg-gray-500'"></span>
+                            </span>
+                            <span class="text-sm" x-text="status.is_running ? 'Running' : 'Stopped'"></span>
+                        </div>
+
+                        <!-- User Menu -->
+                        <div class="relative" x-data="{ open: false }">
+                            <button @click="open = !open" class="flex items-center space-x-2 px-3 py-2 rounded-md hover:bg-gray-700">
+                                <span x-text="user?.email || 'User'"></span>
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                                </svg>
+                            </button>
+                            <div x-show="open" @click.away="open = false"
+                                 class="absolute right-0 mt-2 w-48 bg-gray-800 rounded-md shadow-lg py-1 z-50">
+                                <a href="/settings" class="block px-4 py-2 text-sm hover:bg-gray-700">Settings</a>
+                                <a href="/subscription" class="block px-4 py-2 text-sm hover:bg-gray-700">Subscription</a>
+                                <hr class="my-1 border-gray-700">
+                                <button @click="logout()" class="block w-full text-left px-4 py-2 text-sm hover:bg-gray-700 text-red-400">
+                                    Logout
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </nav>
+
+        <!-- Main Content -->
+        <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            {% block content %}{% endblock %}
+        </main>
+
+        <!-- Toast Notifications -->
+        <div class="fixed bottom-4 right-4 space-y-2 z-50">
+            <template x-for="toast in toasts" :key="toast.id">
+                <div class="px-4 py-3 rounded-lg shadow-lg flex items-center space-x-3"
+                     :class="{
+                         'bg-green-600': toast.type === 'success',
+                         'bg-red-600': toast.type === 'error',
+                         'bg-yellow-600': toast.type === 'warning',
+                         'bg-blue-600': toast.type === 'info'
+                     }"
+                     x-transition>
+                    <span x-text="toast.message"></span>
+                    <button @click="removeToast(toast.id)" class="text-white/80 hover:text-white">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </button>
+                </div>
+            </template>
+        </div>
+    </div>
+
+    <script>
+        function app() {
+            return {
+                user: null,
+                status: {
+                    is_running: false,
+                    algo_enabled: false,
+                    paper_trading: true,
+                },
+                currentPage: '{{ page|default("dashboard") }}',
+                toasts: [],
+                socket: null,
+
+                async init() {
+                    // Load user
+                    await this.loadUser();
+
+                    // Initialize WebSocket
+                    this.initSocket();
+
+                    // Load status
+                    await this.loadStatus();
+                },
+
+                async loadUser() {
+                    try {
+                        const res = await fetch('/api/auth/me');
+                        const data = await res.json();
+                        if (data.user) {
+                            this.user = data.user;
+                        }
+                    } catch (e) {
+                        console.error('Failed to load user:', e);
+                    }
+                },
+
+                async loadStatus() {
+                    try {
+                        const res = await fetch('/api/trading/status');
+                        const data = await res.json();
+                        this.status = data;
+                    } catch (e) {
+                        console.error('Failed to load status:', e);
+                    }
+                },
+
+                initSocket() {
+                    this.socket = io();
+
+                    this.socket.on('connect', () => {
+                        console.log('WebSocket connected');
+                    });
+
+                    this.socket.on('status', (data) => {
+                        this.status = { ...this.status, ...data };
+                    });
+
+                    this.socket.on('tick', (data) => {
+                        window.dispatchEvent(new CustomEvent('tick', { detail: data }));
+                    });
+
+                    this.socket.on('signal', (data) => {
+                        window.dispatchEvent(new CustomEvent('signal', { detail: data }));
+                    });
+
+                    this.socket.on('trade', (data) => {
+                        window.dispatchEvent(new CustomEvent('trade', { detail: data }));
+                        this.toast('Trade executed: ' + data.position_type, 'success');
+                    });
+
+                    this.socket.on('error', (data) => {
+                        this.toast(data.message, 'error');
+                    });
+                },
+
+                async logout() {
+                    try {
+                        await fetch('/api/auth/logout', { method: 'POST' });
+                        window.location.href = '/login';
+                    } catch (e) {
+                        console.error('Logout failed:', e);
+                    }
+                },
+
+                toast(message, type = 'info') {
+                    const id = Date.now();
+                    this.toasts.push({ id, message, type });
+                    setTimeout(() => this.removeToast(id), 5000);
+                },
+
+                removeToast(id) {
+                    this.toasts = this.toasts.filter(t => t.id !== id);
+                }
+            };
+        }
+    </script>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,443 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Crypto Arbitrage SaaS{% endblock %}
+
+{% block content %}
+<div x-data="dashboard()" x-init="init()">
+    <!-- Header with Controls -->
+    <div class="flex flex-wrap items-center justify-between gap-4 mb-8">
+        <div>
+            <h1 class="text-2xl font-bold">Trading Dashboard</h1>
+            <p class="text-gray-400">Real-time spread monitoring and algorithmic trading</p>
+        </div>
+        <div class="flex items-center space-x-4">
+            <!-- Asset Selector -->
+            <select x-model="selectedAsset" @change="changeAsset()"
+                    class="bg-gray-800 border border-gray-700 rounded-lg px-4 py-2">
+                <template x-for="asset in assets" :key="asset">
+                    <option :value="asset" x-text="asset"></option>
+                </template>
+            </select>
+
+            <!-- Paper/Live Toggle -->
+            <button @click="togglePaperMode()"
+                    class="px-4 py-2 rounded-lg font-medium"
+                    :class="config.paper_trading ? 'bg-yellow-600 hover:bg-yellow-700' : 'bg-green-600 hover:bg-green-700'">
+                <span x-text="config.paper_trading ? 'Paper Mode' : 'Live Mode'"></span>
+            </button>
+
+            <!-- Start/Stop Button -->
+            <button @click="toggleTrading()"
+                    class="px-6 py-2 rounded-lg font-medium"
+                    :class="status.is_running ? 'bg-red-600 hover:bg-red-700' : 'bg-primary hover:bg-blue-600'">
+                <span x-text="status.is_running ? 'Stop Trading' : 'Start Trading'"></span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Stats Grid -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        <!-- Spot Price -->
+        <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+            <div class="text-sm text-gray-400">Spot Price</div>
+            <div class="text-2xl font-bold" x-text="formatPrice(tick.spot?.mid)"></div>
+            <div class="text-xs text-gray-500" x-text="tick.spot?.symbol || '-'"></div>
+        </div>
+
+        <!-- Futures Price -->
+        <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+            <div class="text-sm text-gray-400">Futures Price</div>
+            <div class="text-2xl font-bold" x-text="formatPrice(tick.futures?.mid)"></div>
+            <div class="text-xs text-gray-500" x-text="tick.futures?.symbol || '-'"></div>
+        </div>
+
+        <!-- Spread -->
+        <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+            <div class="text-sm text-gray-400">Current Spread</div>
+            <div class="text-2xl font-bold" x-text="formatSpread(signal.spread)"></div>
+            <div class="text-xs" :class="signal.spread > 0 ? 'text-green-400' : 'text-red-400'">
+                <span x-text="signal.spread > 0 ? 'Contango' : 'Backwardation'"></span>
+            </div>
+        </div>
+
+        <!-- Z-Score -->
+        <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+            <div class="text-sm text-gray-400">Z-Score</div>
+            <div class="text-2xl font-bold"
+                 :class="{
+                     'text-red-400': Math.abs(signal.zscore) >= 2,
+                     'text-yellow-400': Math.abs(signal.zscore) >= 1 && Math.abs(signal.zscore) < 2,
+                     'text-green-400': Math.abs(signal.zscore) < 1
+                 }"
+                 x-text="signal.zscore?.toFixed(4) || '0.0000'">
+            </div>
+            <div class="text-xs text-gray-500" x-text="signal.regime || 'UNKNOWN'"></div>
+        </div>
+    </div>
+
+    <!-- Main Content Grid -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- Chart (2 columns) -->
+        <div class="lg:col-span-2 bg-gray-800 rounded-lg p-4 border border-gray-700">
+            <h3 class="text-lg font-semibold mb-4">Z-Score Chart</h3>
+            <div class="h-64">
+                <canvas id="zscoreChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Controls -->
+        <div class="space-y-4">
+            <!-- Position Status -->
+            <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+                <h3 class="text-lg font-semibold mb-4">Position</h3>
+                <div class="space-y-3">
+                    <div class="flex justify-between">
+                        <span class="text-gray-400">Status</span>
+                        <span class="font-medium"
+                              :class="{
+                                  'text-green-400': status.position === 'LONG',
+                                  'text-red-400': status.position === 'SHORT',
+                                  'text-gray-400': status.position === 'NONE'
+                              }"
+                              x-text="status.position || 'NONE'"></span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-400">Algo Trading</span>
+                        <button @click="toggleAlgo()"
+                                class="relative inline-flex h-6 w-11 items-center rounded-full"
+                                :class="status.algo_enabled ? 'bg-primary' : 'bg-gray-600'">
+                            <span class="inline-block h-4 w-4 transform rounded-full bg-white transition"
+                                  :class="status.algo_enabled ? 'translate-x-6' : 'translate-x-1'"></span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Filters Status -->
+            <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+                <h3 class="text-lg font-semibold mb-4">Filters</h3>
+                <div class="space-y-3">
+                    <div class="flex justify-between items-center">
+                        <span class="text-gray-400">Hurst Filter</span>
+                        <span class="flex items-center space-x-2">
+                            <span x-text="signal.hurst?.toFixed(4) || '-'"></span>
+                            <span class="w-3 h-3 rounded-full"
+                                  :class="signal.hurst_ok === true ? 'bg-green-500' :
+                                          signal.hurst_ok === false ? 'bg-red-500' : 'bg-gray-500'"></span>
+                        </span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-gray-400">STD Filter</span>
+                        <span class="flex items-center space-x-2">
+                            <span x-text="signal.std_ratio ? signal.std_ratio.toFixed(2) + 'x' : '-'"></span>
+                            <span class="w-3 h-3 rounded-full"
+                                  :class="signal.std_filter_ok === true ? 'bg-green-500' :
+                                          signal.std_filter_ok === false ? 'bg-red-500' : 'bg-gray-500'"></span>
+                        </span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-400">Data Points</span>
+                        <span x-text="signal.data_points + '/' + signal.lookback"></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Quick Stats -->
+            <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+                <h3 class="text-lg font-semibold mb-4">Statistics</h3>
+                <div class="space-y-3">
+                    <div class="flex justify-between">
+                        <span class="text-gray-400">Total Trades</span>
+                        <span x-text="stats.total_trades || 0"></span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-400">Win Rate</span>
+                        <span :class="stats.win_rate >= 50 ? 'text-green-400' : 'text-red-400'"
+                              x-text="(stats.win_rate || 0) + '%'"></span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-400">Total P&L</span>
+                        <span :class="stats.total_pnl >= 0 ? 'text-green-400' : 'text-red-400'"
+                              x-text="'$' + (stats.total_pnl || 0).toFixed(2)"></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Trades -->
+    <div class="mt-8 bg-gray-800 rounded-lg p-4 border border-gray-700">
+        <h3 class="text-lg font-semibold mb-4">Recent Trades</h3>
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead class="text-gray-400 border-b border-gray-700">
+                    <tr>
+                        <th class="text-left py-2">Time</th>
+                        <th class="text-left py-2">Type</th>
+                        <th class="text-right py-2">Entry Z</th>
+                        <th class="text-right py-2">Exit Z</th>
+                        <th class="text-right py-2">P&L</th>
+                        <th class="text-center py-2">Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <template x-for="trade in recentTrades" :key="trade.id">
+                        <tr class="border-b border-gray-700/50 hover:bg-gray-700/30">
+                            <td class="py-2" x-text="formatTime(trade.entry_time)"></td>
+                            <td class="py-2">
+                                <span class="px-2 py-1 rounded text-xs"
+                                      :class="trade.position_type === 'LONG' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'"
+                                      x-text="trade.position_type"></span>
+                            </td>
+                            <td class="text-right py-2" x-text="trade.entry_zscore?.toFixed(4)"></td>
+                            <td class="text-right py-2" x-text="trade.exit_zscore?.toFixed(4) || '-'"></td>
+                            <td class="text-right py-2"
+                                :class="trade.pnl_usd >= 0 ? 'text-green-400' : 'text-red-400'"
+                                x-text="trade.is_open ? '-' : '$' + trade.pnl_usd.toFixed(2)"></td>
+                            <td class="text-center py-2">
+                                <span class="px-2 py-1 rounded text-xs"
+                                      :class="trade.is_open ? 'bg-blue-500/20 text-blue-400' : 'bg-gray-500/20 text-gray-400'"
+                                      x-text="trade.is_open ? 'OPEN' : 'CLOSED'"></span>
+                            </td>
+                        </tr>
+                    </template>
+                </tbody>
+            </table>
+            <div x-show="recentTrades.length === 0" class="text-center py-8 text-gray-500">
+                No trades yet
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function dashboard() {
+    return {
+        assets: ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'AVAX', 'LINK'],
+        selectedAsset: 'BTC',
+        config: {
+            paper_trading: true,
+            algo_enabled: false,
+        },
+        tick: {
+            spot: null,
+            futures: null,
+        },
+        signal: {},
+        stats: {},
+        recentTrades: [],
+        chart: null,
+        zscoreHistory: [],
+
+        async init() {
+            await this.loadConfig();
+            await this.loadStats();
+            await this.loadTrades();
+            this.initChart();
+            this.setupListeners();
+        },
+
+        async loadConfig() {
+            try {
+                const res = await fetch('/api/user/config');
+                const data = await res.json();
+                this.config = data.config || this.config;
+                this.selectedAsset = this.config.asset || 'BTC';
+            } catch (e) {
+                console.error('Failed to load config:', e);
+            }
+        },
+
+        async loadStats() {
+            try {
+                const res = await fetch('/api/user/statistics');
+                this.stats = await res.json();
+            } catch (e) {
+                console.error('Failed to load stats:', e);
+            }
+        },
+
+        async loadTrades() {
+            try {
+                const res = await fetch('/api/user/trades?limit=10');
+                const data = await res.json();
+                this.recentTrades = data.trades || [];
+            } catch (e) {
+                console.error('Failed to load trades:', e);
+            }
+        },
+
+        initChart() {
+            const ctx = document.getElementById('zscoreChart').getContext('2d');
+            this.chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Z-Score',
+                        data: [],
+                        borderColor: '#3b82f6',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        fill: true,
+                        tension: 0.1,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            grid: { color: '#374151' },
+                            ticks: { color: '#9ca3af' }
+                        },
+                        x: {
+                            grid: { color: '#374151' },
+                            ticks: { color: '#9ca3af' }
+                        }
+                    },
+                    plugins: {
+                        legend: { display: false },
+                        annotation: {
+                            annotations: {
+                                line1: {
+                                    type: 'line',
+                                    yMin: 2,
+                                    yMax: 2,
+                                    borderColor: 'rgba(239, 68, 68, 0.5)',
+                                    borderWidth: 1,
+                                    borderDash: [5, 5],
+                                },
+                                line2: {
+                                    type: 'line',
+                                    yMin: -2,
+                                    yMax: -2,
+                                    borderColor: 'rgba(239, 68, 68, 0.5)',
+                                    borderWidth: 1,
+                                    borderDash: [5, 5],
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        },
+
+        setupListeners() {
+            window.addEventListener('tick', (e) => {
+                this.tick = e.detail;
+            });
+
+            window.addEventListener('signal', (e) => {
+                this.signal = e.detail;
+                this.updateChart(e.detail.zscore);
+            });
+
+            window.addEventListener('trade', (e) => {
+                this.recentTrades.unshift(e.detail);
+                if (this.recentTrades.length > 10) {
+                    this.recentTrades.pop();
+                }
+            });
+        },
+
+        updateChart(zscore) {
+            if (!this.chart) return;
+
+            this.zscoreHistory.push(zscore);
+            if (this.zscoreHistory.length > 100) {
+                this.zscoreHistory.shift();
+            }
+
+            this.chart.data.labels = this.zscoreHistory.map((_, i) => i);
+            this.chart.data.datasets[0].data = this.zscoreHistory;
+            this.chart.update('none');
+        },
+
+        async toggleTrading() {
+            const endpoint = this.$root.status.is_running ? '/api/trading/stop' : '/api/trading/start';
+            try {
+                const res = await fetch(endpoint, { method: 'POST' });
+                const data = await res.json();
+                if (data.error) {
+                    this.$root.toast(data.error, 'error');
+                } else {
+                    this.$root.toast(data.message, 'success');
+                }
+            } catch (e) {
+                this.$root.toast('Failed to toggle trading', 'error');
+            }
+        },
+
+        async toggleAlgo() {
+            try {
+                const res = await fetch('/api/trading/toggle-algo', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ enabled: !this.$root.status.algo_enabled })
+                });
+                const data = await res.json();
+                if (data.error) {
+                    this.$root.toast(data.error, 'error');
+                }
+            } catch (e) {
+                this.$root.toast('Failed to toggle algo', 'error');
+            }
+        },
+
+        async togglePaperMode() {
+            try {
+                const res = await fetch('/api/trading/paper-mode', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ enabled: !this.config.paper_trading })
+                });
+                const data = await res.json();
+                if (data.error) {
+                    this.$root.toast(data.error, 'error');
+                } else {
+                    this.config.paper_trading = data.paper_trading;
+                }
+            } catch (e) {
+                this.$root.toast('Failed to toggle paper mode', 'error');
+            }
+        },
+
+        async changeAsset() {
+            try {
+                const res = await fetch('/api/user/config', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ asset: this.selectedAsset })
+                });
+                const data = await res.json();
+                if (data.error) {
+                    this.$root.toast(data.error, 'error');
+                } else {
+                    this.config = data.config;
+                    this.$root.toast('Asset changed to ' + this.selectedAsset, 'success');
+                }
+            } catch (e) {
+                this.$root.toast('Failed to change asset', 'error');
+            }
+        },
+
+        formatPrice(price) {
+            if (!price) return '-';
+            return price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        },
+
+        formatSpread(spread) {
+            if (spread === undefined || spread === null) return '-';
+            return spread.toFixed(4);
+        },
+
+        formatTime(timestamp) {
+            if (!timestamp) return '-';
+            return new Date(timestamp).toLocaleTimeString();
+        }
+    };
+}
+</script>
+{% endblock %}
