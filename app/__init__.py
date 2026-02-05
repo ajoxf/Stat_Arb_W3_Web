@@ -76,7 +76,7 @@ def _init_extensions(app):
 
     # Flask-Login
     login_manager.init_app(app)
-    login_manager.login_view = 'auth.login'
+    login_manager.login_view = 'login'  # Points to the HTML view route, not API
 
     # JWT Handler
     jwt_handler = JWTHandler(
