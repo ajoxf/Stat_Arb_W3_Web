@@ -114,6 +114,8 @@ def _init_extensions(app):
 
 def _register_blueprints(app):
     """Register Flask blueprints."""
+    from flask import render_template, redirect, url_for
+    from flask_login import login_required, current_user
     from app.api import register_blueprints
 
     # API routes
@@ -126,11 +128,27 @@ def _register_blueprints(app):
 
     @app.route('/')
     def index():
-        return {
-            'name': 'Crypto Arbitrage SaaS API',
-            'version': '1.0.0',
-            'docs': '/api/docs',
-        }
+        if current_user.is_authenticated:
+            return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
+
+    # View routes (HTML pages)
+    @app.route('/login')
+    def login():
+        if current_user.is_authenticated:
+            return redirect(url_for('dashboard'))
+        return render_template('login.html')
+
+    @app.route('/register')
+    def register():
+        if current_user.is_authenticated:
+            return redirect(url_for('dashboard'))
+        return render_template('login.html')
+
+    @app.route('/dashboard')
+    @login_required
+    def dashboard():
+        return render_template('dashboard.html')
 
     logger.info("Blueprints registered")
 
