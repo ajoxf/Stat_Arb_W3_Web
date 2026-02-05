@@ -542,7 +542,7 @@ class AuditLog(db.Model):
     user_agent = db.Column(db.String(500), nullable=True)
 
     # Additional data (JSON)
-    metadata = db.Column(JSONB, nullable=True)
+    event_data = db.Column(JSONB, nullable=True)
 
     # Timestamp
     timestamp = db.Column(
