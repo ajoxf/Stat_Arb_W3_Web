@@ -14,7 +14,7 @@ from enum import Enum
 
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import Index, CheckConstraint
-from sqlalchemy.dialects.postgresql import JSONB
+# Using db.JSON for SQLite/PostgreSQL compatibility
 
 db = SQLAlchemy()
 
@@ -542,7 +542,7 @@ class AuditLog(db.Model):
     user_agent = db.Column(db.String(500), nullable=True)
 
     # Additional data (JSON)
-    event_data = db.Column(JSONB, nullable=True)
+    event_data = db.Column(db.JSON, nullable=True)
 
     # Timestamp
     timestamp = db.Column(
